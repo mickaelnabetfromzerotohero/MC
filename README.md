@@ -74,6 +74,14 @@ charts to the output folder.
 
 Tests: `pip install pytest && python -m pytest`
 
+### Interactive page
+
+`web/index.html` is a self-contained page (in French) that runs the same simulation in the
+browser: pick stocks and amounts among 14 tickers, change the horizon or the tail, and watch
+10,000 futures being drawn. Open it in any browser; it needs no server. Its data (daily mean
+and covariance of log returns, weekly price lines) is frozen on 20 Nov 2026; refresh it with
+`PYTHONPATH=. python web/build_data.py --end YYYY-MM-DD`.
+
 ## Method
 
 1. **Estimate** (`mcrisk/estimate.py`). Daily log returns from adjusted closes. Growth a year
