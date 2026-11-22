@@ -70,6 +70,7 @@ button { font: inherit; color: inherit; }
 /* Portfolio builder */
 .builder { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.25rem; display: grid; gap: 1.1rem; }
 .builder-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.hint { font-size: 0.88rem; color: var(--muted); }
 .total { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.9rem; }
 .presets { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .presets .label { font-size: 0.85rem; color: var(--muted); margin-right: 0.2rem; }
@@ -206,6 +207,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
       <h2 id="builder-title">Ton portefeuille</h2>
       <p class="total" id="total"></p>
     </div>
+    <p class="hint">Pour chaque ligne, mets ce qu'elle vaut aujourd'hui dans ton appli, pas ce que tu as versé.</p>
     <div class="presets" id="presets"></div>
     <div class="positions" id="positions"></div>
     <div class="add">
@@ -247,7 +249,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     <div class="step-head">
       <span class="step-num">ÉTAPE 2 SUR 5</span>
       <h2 id="s2-title">Imaginer 10&nbsp;000 avenirs</h2>
-      <p class="explain">Chaque ligne est un avenir possible pour ton portefeuille, jour après jour. Les hausses et les baisses sont tirées au hasard, avec la même taille et les mêmes liens entre lignes que dans le passé. On ne suppose pas que la tendance passée continue. <span class="gain">Vert</span> : il finit au-dessus de ta mise. <span class="loss">Rouge</span> : en dessous.</p>
+      <p class="explain">Chaque ligne est un avenir possible pour ton portefeuille, jour après jour. Les hausses et les baisses sont tirées au hasard, avec la même taille et les mêmes liens entre lignes que dans le passé. On ne suppose pas que la tendance passée continue. <span class="gain">Vert</span> : il finit au-dessus de la valeur d'aujourd'hui. <span class="loss">Rouge</span> : en dessous. Gains et pertes se comptent à partir de ce que vaut ton portefeuille aujourd'hui, pas de ce que tu as payé.</p>
     </div>
     <div class="chart">
       <canvas id="fan" role="img" aria-label="Avenirs simulés du portefeuille"></canvas>
@@ -571,7 +573,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
   }
   function updateTotal() {
     const total = state.positions.reduce((s, p) => s + (p.a || 0), 0);
-    $("total").textContent = "Total : " + nf2.format(total) + " €";
+    $("total").textContent = "Valeur aujourd'hui : " + nf2.format(total) + " €";
   }
 
   function deltaLine({ before, after }) {
@@ -616,7 +618,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     const m = current.together;
     el.innerHTML = `
       <p class="answer-main">1 ${h.unit} sur ${state.tail}, tu perds plus de <strong class="loss">${money(m.var)}</strong>.</p>
-      <p class="answer-sub">C'est ${pct(m.var / m.capital)} de tes ${money(m.capital)}. Pendant ces mauvaises périodes, tu perds en moyenne <strong>${money(m.es)}</strong>.</p>
+      <p class="answer-sub">C'est ${pct(m.var / m.capital)} de la valeur actuelle de ton portefeuille (${money(m.capital)}). Pendant ces mauvaises périodes, tu perds en moyenne <strong>${money(m.es)}</strong>.</p>
       ${current.delta ? deltaLine(current.delta) : ""}
       ${realityBlock()}
       <dl class="facts">
@@ -714,7 +716,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     ctx.beginPath(); ctx.moveTo(plotL, yOf(sim.capital)); ctx.lineTo(w - 2, yOf(sim.capital)); ctx.stroke();
     ctx.setLineDash([]);
     ctx.font = mono; ctx.fillStyle = ink; ctx.textBaseline = "bottom";
-    ctx.fillText("mise : " + money(sim.capital), plotL + 4, yOf(sim.capital) - 4);
+    ctx.fillText("valeur aujourd'hui : " + money(sim.capital), plotL + 4, yOf(sim.capital) - 4);
     ctx.fillStyle = muted; ctx.textBaseline = "alphabetic";
     ctx.fillText("aujourd'hui", plotL, h - 6);
     ctx.textAlign = "right"; ctx.fillText(HORIZONS[state.days].end, plotR, h - 6); ctx.textAlign = "left";
@@ -856,7 +858,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     if (sel.length < 2) {
       const options = QUICK.filter(([t]) => t !== sel[0].t);
       box.innerHTML = `<div class="chart" style="gap:0.8rem">
-        <p>Avec une seule ligne, rien ne compense une mauvaise passe. Partage ta mise avec une autre ligne pour voir si ${h.bad} coûte moins cher :</p>
+        <p>Avec une seule ligne, rien ne compense une mauvaise passe. Mets la moitié de cette somme dans une autre ligne pour voir si ${h.bad} coûte moins cher :</p>
         <div class="quick">${options.map(([t, label]) => `<button type="button" class="chip" data-split="${t}">Moitié dans ${esc(label)}</button>`).join("")}</div></div>`;
       return;
     }
