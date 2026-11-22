@@ -1,0 +1,26 @@
+Monte Carlo Portfolio Risk
+==========================
+
+Inputs: last 5.0 years · 2021-11-22 → 2026-11-20
+  ticker    weight   growth/yr   swing/yr
+  NVDA       33.3%      +31.8%       52%
+  AAPL       33.3%      +17.0%       28%
+  TSLA       33.3%       -2.2%       60%
+
+Correlations
+      NVDA  AAPL  TSLA
+NVDA  1.00  0.46  0.48
+AAPL  0.46  1.00  0.47
+TSLA  0.48  0.47  1.00
+
+Simulated 10,000 futures over 21 trading days, start $10,000
+  ended up:   5,528
+  ended down: 4,472  (45% chance of a losing month)
+  median outcome: +$135
+
+Value at risk (95%): 1 month in 20, lose more than $1,516
+Expected shortfall: those worst months lose $1,865 on average
+
+If each stock moved on its own (same growth and swing, zero correlation):
+  value at risk $1,066, expected shortfall $1,351
+  -> moving together makes the bad-month loss x1.42 bigger
