@@ -76,11 +76,17 @@ Tests: `pip install pytest && python -m pytest`
 
 ### Interactive page
 
-`web/index.html` is a self-contained page (in French) that runs the same simulation in the
-browser: pick stocks and amounts among 14 tickers, change the horizon or the tail, and watch
-10,000 futures being drawn. Open it in any browser; it needs no server. Its data (daily mean
-and covariance of log returns, weekly price lines) is frozen on 20 Nov 2026; refresh it with
-`PYTHONPATH=. python web/build_data.py --end YYYY-MM-DD`.
+`web/index.html` is a self-contained page (in French, in euros) that runs the simulation in
+the browser: pick lines and amounts among 18 (PEA ETFs such as MSCI World and Nasdaq 100,
+TSMC, Nebius, gold, US stocks), change the horizon or the tail, and watch 10,000 futures being
+drawn. It also shows which line carries the risk (its share of the loss in the worst futures)
+and how the last week, month or quarter really went compared with the model. Open it in any
+browser; it needs no server.
+
+Differences from the Python model: every price is converted to euros, risk comes from
+weekly returns (Paris and New York close at different hours) since 21 Oct 2024, when Nebius
+returned to the market, and the simulation assumes no trend. The data is frozen on
+20 Nov 2026; refresh it with `python web/build_data.py --end YYYY-MM-DD`.
 
 ## Method
 
