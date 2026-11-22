@@ -9,28 +9,53 @@ Estimate each stock's growth, swing and correlations from five years of prices, 
 
 The lesson: **correlation, not the individual stocks, drives portfolio risk.**
 
-![Simulated futures](docs/img/2_futures.png)
+![Simulated futures](docs/img/real/2_futures.png)
 
-## Results (demo inputs)
+## Results: real prices, 22 Nov 2021 → 20 Nov 2026
 
-Equal-weighted Nvidia, Apple and Tesla, $10,000, 21 trading days, 10,000 futures:
+Equal-weighted Nvidia, Apple and Tesla, $10,000, 21 trading days, 10,000 futures,
+daily adjusted closes from Yahoo Finance:
+
+| | Growth a year | Swing a year |
+|---|---|---|
+| NVDA | +31.8% | ±52% |
+| AAPL | +17.0% | ±28% |
+| TSLA | −2.2% | ±60% |
+
+Correlations between the three stocks: 0.46 to 0.48.
 
 | | Moving together | Each on its own |
 |---|---|---|
-| Value at risk (95%) | **$1,423** | $1,030 |
-| Expected shortfall | **$1,762** | $1,315 |
+| Value at risk (95%) | **$1,516** | $1,066 |
+| Expected shortfall | **$1,865** | $1,351 |
 
-Moving together makes the bad-month loss **×1.4** bigger.
+Moving together makes the bad-month loss **×1.4** bigger. Full output:
+[`docs/img/real/report.txt`](docs/img/real/report.txt).
 
-The demo uses the growth and swing figures shown in the original explainer video
-(NVDA +40% ±52%, AAPL +20% ±28%, TSLA +2.5% ±59% a year). The video does not show the
-correlations, so the demo **assumes 0.40 for every pair**. With that single assumption the
-model lands within 1% of the video's figures ($1,435 / $1,776 / $1,021 / ×1.4), which checks
-the method. Run it on real prices (below) for current numbers.
+Note: the window ends on a −15% day for NVDA (TSLA −8% and AAPL −2% the same day), which
+pulls NVDA's 5-year growth estimate down.
+
+![Inputs](docs/img/real/1_inputs.png)
 
 | | |
 |---|---|
-| ![VaR and expected shortfall](docs/img/3_var_es.png) | ![Correlation effect](docs/img/4_correlation.png) |
+| ![VaR and expected shortfall](docs/img/real/3_var_es.png) | ![Correlation effect](docs/img/real/4_correlation.png) |
+
+## Check against the video (demo inputs)
+
+`--demo` uses the growth and swing figures shown in the original explainer video
+(NVDA +40% ±52%, AAPL +20% ±28%, TSLA +2.5% ±59% a year), which come from an earlier
+5-year window. The video does not show the correlations, so the demo **assumes 0.40 for
+every pair**. With that single assumption the model lands within 1% of the video's figures:
+
+| | Demo | Video |
+|---|---|---|
+| Value at risk (95%) | $1,423 | $1,435 |
+| Expected shortfall | $1,762 | $1,776 |
+| Each on its own | $1,030 | $1,021 |
+| Correlation effect | ×1.4 | ×1.4 |
+
+Charts: [`docs/img/demo/`](docs/img/demo/).
 
 ## Run it
 
@@ -82,5 +107,6 @@ mcrisk/
   plots.py      the four charts
   cli.py        command line (python -m mcrisk)
 tests/          32 tests, including a check against the video's figures
-docs/img/       charts from the demo run
+docs/img/real/  charts and report from real prices (22 Nov 2021 → 20 Nov 2026)
+docs/img/demo/  charts from the demo run
 ```

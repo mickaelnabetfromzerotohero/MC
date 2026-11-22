@@ -79,7 +79,7 @@ def plot_inputs(
     names = names or {}
     k = params.n_assets
     fig = _figure(12, 1.4 + 1.5 * k)
-    grid = fig.add_gridspec(k, 3, width_ratios=[2.2, 0.9, 1.5], wspace=0.2, hspace=0.6,
+    grid = fig.add_gridspec(k, 3, width_ratios=[2.2, 1.1, 1.5], wspace=0.2, hspace=0.6,
                             top=0.8, bottom=0.06)
     fig.suptitle("estimate growth, swing and correlations", color=TEXT, fontsize=16, y=0.97, **SERIF)
     fig.text(0.125, 0.86, label, color=MUTED, fontsize=9, **MONO)
@@ -109,11 +109,11 @@ def plot_inputs(
         growth = params.annual_growth[i]
         num.text(0.05, 0.35, f"{growth:+.1%}", color=GREEN if growth >= 0 else RED,
                  fontsize=14, transform=num.transAxes, **SERIF)
-        num.text(0.55, 0.35, f"±{params.annual_swing[i]:.0%}", color=TEXT, fontsize=14,
+        num.text(0.6, 0.35, f"±{params.annual_swing[i]:.0%}", color=TEXT, fontsize=14,
                  transform=num.transAxes, **SERIF)
         if i == 0:
             num.text(0.05, 1.05, "growth\na year", color=GREEN, fontsize=8, transform=num.transAxes, **MONO)
-            num.text(0.55, 1.05, "swing\na year", color=TEXT, fontsize=8, transform=num.transAxes, **MONO)
+            num.text(0.6, 1.05, "swing\na year", color=TEXT, fontsize=8, transform=num.transAxes, **MONO)
 
     ax = fig.add_subplot(grid[:, 2])
     corr = params.corr
