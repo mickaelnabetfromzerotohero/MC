@@ -228,6 +228,24 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
 .mix-fill { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .frontier-note { font-size: 0.85rem; color: var(--muted); max-width: 40rem; }
 
+/* Personal risk rule */
+.rule { display: grid; gap: 0.65rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.rule-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.3rem 1rem; align-items: baseline; }
+.rule-head h2 { font-size: 1.3rem; }
+.rule-banner { padding: 0.6rem 0.85rem; border-left: 4px solid var(--gain); background: var(--bg); border-radius: 4px; font-weight: 600; }
+.rule-banner.alert { border-left-color: var(--loss); color: var(--loss); }
+.rule-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; font-size: 0.94rem; }
+.rule-list li { padding-left: 1.3rem; position: relative; }
+.rule-list li::before { content: "✓"; position: absolute; left: 0; color: var(--gain); font-weight: 700; }
+.rule-list li.hit::before { content: "!"; color: var(--loss); }
+.rule-list li.wait::before { content: "…"; color: var(--muted); }
+.rule-info { font-size: 0.86rem; color: var(--muted); }
+.rule-edit summary { cursor: pointer; color: var(--accent); font-size: 0.9rem; }
+.rule-form { display: grid; gap: 0.55rem; margin-top: 0.6rem; font-size: 0.93rem; }
+.rule-form label { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.rule-form input, .rule-form select { font: inherit; padding: 0.3rem 0.45rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); max-width: 100%; }
+.rule-form input { width: 6rem; text-align: right; font-family: var(--font-mono); }
+
 @media (max-width: 560px) {
   .facts { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
   .fact { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0.75rem; }
@@ -254,6 +272,30 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
   </header>
 
   <section class="answer" id="answer" aria-live="polite"></section>
+
+  <section class="rule" id="rule" hidden aria-labelledby="rule-title">
+    <div class="rule-head">
+      <h2 id="rule-title">Ta règle de risque</h2>
+      <span class="muted" id="rule-date"></span>
+    </div>
+    <div id="rule-status" aria-live="polite"></div>
+    <details class="rule-edit" id="rule-edit">
+      <summary>Modifier ma règle</summary>
+      <div class="rule-form">
+        <label for="rule-loss">Alerte si je perds plus de <input type="number" id="rule-loss" min="1" step="10" inputmode="decimal"> € sur 30 jours</label>
+        <label for="rule-share">Une ligne porte au plus <input type="number" id="rule-share" min="5" max="100" step="5" inputmode="decimal"> % de mon risque</label>
+        <label for="rule-action">Quand l'alerte sonne :
+          <select id="rule-action">
+            <option>Ne plus acheter pendant 7 jours</option>
+            <option>Attendre 48 h avant de vendre quoi que ce soit</option>
+            <option>Réduire la ligne qui porte le plus de risque</option>
+          </select>
+        </label>
+        <div class="checkin-actions"><button type="button" class="btn" id="rule-save">Enregistrer ma règle</button></div>
+        <p class="msg" id="rule-msg" aria-live="polite"></p>
+      </div>
+    </details>
+  </section>
 
   <section class="builder" aria-labelledby="builder-title">
     <div class="builder-head">
@@ -1077,6 +1119,132 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     $("source").textContent = `Données : ${D.source}, du ${frDate(D.start)} au ${frDate(D.end)}, figées à cette date. Modèle : variations journalières normales et corrélées, sans tendance, portefeuille acheté puis conservé.`;
   }
 
+  // ---------- personal risk rule ----------
+  // 1. drop over 30 days, from the highest check-in in that window (a check-in with money moved
+  //    in or out starts a new window); 2. no line above a share of the risk (Monte Carlo tail share,
+  //    1 month in 20, on the latest check-in); 3. what to do when it rings.
+  let rule = null, ruleShareCache = { key: "", top: null };
+  function validRule(d) {
+    if (!d) return null;
+    const loss = Number(d.lossLimit), share = Number(d.riskShareMax);
+    if (!(loss > 0) || !(share > 0 && share <= 1)) return null;
+    return {
+      lossLimit: loss, riskShareMax: share,
+      action: typeof d.action === "string" && d.action ? d.action.slice(0, 120) : "Ne plus acheter pendant 7 jours",
+      setAt: typeof d.setAt === "string" ? d.setAt.slice(0, 10) : "",
+    };
+  }
+  function subscribeRule() {
+    db.doc("settings/rule").onSnapshot((snap) => {
+      rule = snap.exists ? validRule(snap.data()) : null;
+      fillRuleForm();
+      renderRule();
+    }, () => { $("rule-status").innerHTML = `<p class="rule-info">Ta règle ne peut pas être lue pour le moment.</p>`; });
+  }
+  function fillRuleForm() {
+    if ($("rule-edit").open) return;
+    $("rule-loss").value = rule ? rule.lossLimit : 150;
+    $("rule-share").value = rule ? Math.round(rule.riskShareMax * 100) : 25;
+    if (rule) for (const o of $("rule-action").options) o.selected = o.text === rule.action;
+  }
+  function topRiskShare(positions) {
+    const key = JSON.stringify(positions);
+    if (ruleShareCache.key === key) return ruleShareCache.top;
+    let top = null;
+    if (positions.length >= 2) {
+      const sim = simulate(positions.map((p) => idxOf(p.t)), positions.map((p) => p.a), 21, 42, false);
+      const shares = contributions(sim, measure(sim.finalT, sim.capital, 20));
+      shares.forEach((s, i) => { if (!top || s.share > top.share) top = { t: positions[i].t, share: s.share }; });
+    }
+    ruleShareCache = { key, top };
+    return top;
+  }
+  function renderRule() {
+    if (!db) return;
+    $("rule").hidden = false;
+    const status = $("rule-status");
+    if (!rule) {
+      $("rule-date").textContent = "";
+      status.innerHTML = `<p class="rule-info">Aucune règle enregistrée. Ouvre « Modifier ma règle » pour en fixer une.</p>`;
+      return;
+    }
+    $("rule-date").textContent = rule.setAt ? `fixée le ${frDate(rule.setAt)}` : "";
+    const latest = latestSnapshot();
+    const items = [];
+    let rings = false;
+    if (!latest) {
+      items.push({ cls: "wait", text: "Enregistre un relevé pour que la règle puisse être vérifiée." });
+    } else {
+      const from = new Date(latest.date + "T12:00:00");
+      from.setDate(from.getDate() - 30);
+      const fromIso = localDate(from);
+      let start = 0;
+      snapshots.forEach((s, i) => { if (s.flows) start = i; });
+      const win = snapshots.filter((s, i) => i >= start && s.date >= fromIso);
+      const now = sumPositions(latest.positions);
+      if (win.length < 2) {
+        items.push({ cls: "wait", text: `Perte sur 30 jours : il faut au moins 2 relevés pour la mesurer. Limite : ${money(rule.lossLimit)}.` });
+      } else {
+        const peak = Math.max(...win.map((s) => sumPositions(s.positions)));
+        const drop = now - peak;
+        const hit = drop <= -rule.lossLimit;
+        rings = rings || hit;
+        items.push({ cls: hit ? "hit" : "", text: `Perte sur 30 jours, depuis ton plus haut relevé : ${drop < 0 ? money(-drop) : "aucune"}. Limite : ${money(rule.lossLimit)}.` });
+      }
+      const top = topRiskShare(latest.positions);
+      if (top) {
+        const hit = top.share > rule.riskShareMax;
+        rings = rings || hit;
+        items.push({ cls: hit ? "hit" : "", text: `Ligne qui porte le plus de risque : ${esc(nameOf(top.t))}, ${pf(0).format(top.share)} de ton risque. Limite : ${pf(0).format(rule.riskShareMax)}.` });
+      }
+    }
+    let banner = "";
+    if (latest) {
+      if (rings) {
+        const until = new Date(latest.date + "T12:00:00");
+        until.setDate(until.getDate() + 7);
+        const when = /7 jours/.test(rule.action) ? ` Jusqu'au ${frDate(localDate(until))} au moins, puisque ton dernier relevé (${frDate(latest.date)}) est en alerte.` : "";
+        banner = `<p class="rule-banner alert">Ta règle sonne : ${esc(rule.action.charAt(0).toLowerCase() + rule.action.slice(1))}.${when}</p>`;
+      } else {
+        banner = `<p class="rule-banner">Tout est dans ta règle. Rien à faire.</p>`;
+      }
+    }
+    let info = "";
+    if (latest) {
+      const moves = D.moves["21"];
+      let startV = 0, nowV = 0;
+      for (const p of latest.positions) { nowV += p.a; startV += p.a / (1 + moves[idxOf(p.t)]); }
+      const marketDrop = nowV - startV;
+      info = `<p class="rule-info">Pour info, sur le dernier mois de marché (du ${frDate(D.since["21"])} au ${frDate(D.end)}), tes lignes ont fait ${moneySigned(marketDrop)}${marketDrop <= -rule.lossLimit ? " : ta limite de perte aurait sonné." : "."}</p>`;
+    }
+    status.innerHTML = banner + `<ul class="rule-list">${items.map((it) => `<li class="${it.cls}">${it.text}</li>`).join("")}</ul>` + info;
+  }
+  async function saveRule() {
+    if (!db) return;
+    const loss = parseFloat($("rule-loss").value), share = parseFloat($("rule-share").value);
+    const msg = $("rule-msg");
+    if (!(loss > 0) || !(share > 0 && share <= 100)) {
+      msg.textContent = "Mets une perte en euros et une part entre 1 et 100 %.";
+      msg.className = "msg err";
+      return;
+    }
+    const body = { lossLimit: Math.round(loss * 100) / 100, riskShareMax: share / 100, action: $("rule-action").value, setAt: localDate(new Date()) };
+    const btn = $("rule-save");
+    btn.disabled = true;
+    try {
+      await db.doc("settings/rule").set(body);
+      msg.textContent = "Règle enregistrée.";
+      msg.className = "msg ok";
+      $("rule-edit").open = false;
+    } catch (e) {
+      msg.textContent = "L'enregistrement a échoué. Réessaie dans un instant.";
+      msg.className = "msg err";
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  $("rule-save").addEventListener("click", saveRule);
+
   // ---------- daily check-in: private store and screenshot import ----------
   let db = null, sampleFn = null, imageLimits = null, isOwner = false;
   let snapshots = [], appliedLatest = false, loadTimer = 0, pendingImport = null, pendingDocDate = null, importSource = "saisie";
@@ -1121,6 +1289,8 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     $("history-section").hidden = false;
     renderHistory();
     subscribeSnapshots();
+    $("rule").hidden = false;
+    subscribeRule();
     sampleFn = await window.claude.use("sample").catch(() => null);
     if (sampleFn) {
       const lim = await sampleFn.limits().catch(() => null);
@@ -1152,6 +1322,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
       }
       renderCheckinStatus();
       renderHistory();
+      renderRule();
     }, () => {
       clearTimeout(loadTimer);
       setMsg("Impossible de lire tes relevés pour le moment. Recharge la page plus tard.", "err");
