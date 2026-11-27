@@ -41,7 +41,7 @@ STOCKS = [
 FX = {"USD": "EURUSD=X", "SEK": "EURSEK=X"}
 START = "2024-10-21"
 # Weekdays back for "last week / month / quarter" (the index holds every weekday, FX trades daily).
-LOOKBACK = (5, 21, 63)
+LOOKBACK = (5, 21, 63, 252)
 
 
 def euro_prices(end: str) -> pd.DataFrame:
