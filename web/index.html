@@ -246,9 +246,9 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
         <h3>Relevé du jour</h3>
         <span class="checkin-status" id="checkin-status"></span>
       </div>
-      <p class="checkin-howto">Chaque jour vers 15 h : fais des captures d'écran de la liste de tes placements dans Trade Republic (PEA et compte-titres), importe-les ici, vérifie les montants, puis enregistre.</p>
+      <p class="checkin-howto">Chaque jour vers 15 h : importe le PDF « net worth » du jour de Trade Republic (ou des captures d'écran de tes placements), vérifie les montants, puis enregistre. Le PDF est lu dans ton navigateur et n'est pas conservé.</p>
       <div class="checkin-actions">
-        <label class="btn secondary file-label" id="import-label" hidden>Importer des captures<input type="file" id="import-file" accept="image/png,image/jpeg,image/webp" multiple></label>
+        <label class="btn secondary file-label" id="import-label" hidden>Importer le PDF ou des captures<input type="file" id="import-file" accept="application/pdf,.pdf" multiple></label>
         <button type="button" class="btn" id="save-snapshot">Enregistrer le relevé du jour</button>
       </div>
       <label class="check"><input type="checkbox" id="flows"> J'ai versé, acheté ou vendu depuis le dernier relevé</label>
@@ -1019,7 +1019,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
 
   // ---------- daily check-in: private store and screenshot import ----------
   let db = null, sampleFn = null, imageLimits = null, isOwner = false;
-  let snapshots = [], appliedLatest = false, loadTimer = 0, pendingImport = null;
+  let snapshots = [], appliedLatest = false, loadTimer = 0, pendingImport = null, pendingDocDate = null, importSource = "saisie";
   const Z = { 10: 1.2816, 20: 1.6449, 100: 2.3263 };
   const latestSnapshot = () => (snapshots.length ? snapshots[snapshots.length - 1] : null);
   const pad2 = (n) => String(n).padStart(2, "0");
@@ -1066,8 +1066,8 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
       const lim = await sampleFn.limits().catch(() => null);
       imageLimits = lim && lim.images ? lim.images : null;
     }
-    if (imageLimits) {
-      $("import-file").accept = imageLimits.mediaTypes.join(",");
+    if (sampleFn) {
+      $("import-file").accept = ["application/pdf", ".pdf"].concat(imageLimits ? imageLimits.mediaTypes : []).join(",");
       $("import-label").hidden = false;
     }
   }
@@ -1127,6 +1127,8 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     ].join("\n");
   }
   function parseImport(res) {
+    const d = res && typeof res.date === "string" ? res.date.slice(0, 10) : "";
+    pendingDocDate = /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
     const raw = res && Array.isArray(res.lignes) ? res.lignes : [];
     return raw.map((l) => {
       const value = Number(String(l && l.valeur).replace(",", "."));
@@ -1154,18 +1156,23 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     const out = $("import-out");
     if (!lines.length) {
       out.innerHTML = "";
-      setMsg("Aucun montant trouvé sur ces captures. Prends la liste des placements, avec les montants visibles.", "err");
+      setMsg(importSource === "pdf"
+        ? "Aucun montant trouvé dans ce PDF. Vérifie que c'est bien le relevé de ton patrimoine, ou importe des captures."
+        : "Aucun montant trouvé sur ces captures. Prends la liste des placements, avec les montants visibles.", "err");
       return;
     }
     const total = lines.reduce((s, l) => s + l.valeur, 0);
     const unknown = lines.filter((l) => !l.id);
     pendingImport = lines;
-    out.innerHTML = `<p>Montants lus sur tes captures (total ${nf2.format(total)} €). Vérifie-les avant de les utiliser :</p>
+    const from = importSource === "pdf" ? "ton PDF" : "tes captures";
+    const dated = pendingDocDate ? ` daté du ${frDate(pendingDocDate)}` : "";
+    out.innerHTML = `<p>Montants lus sur ${from}${dated} (total ${nf2.format(total)} €). Vérifie-les avant de les utiliser :</p>
       <table><tbody>${lines.map((l) => `<tr>
         <td>${esc(l.nom)}</td>
         <td class="${l.id ? "" : "unknown"}">${l.id ? esc(nameOf(l.id)) : "pas dans la liste"}</td>
         <td class="num">${nf2.format(l.valeur)} €</td></tr>`).join("")}</tbody></table>
       ${unknown.length ? `<p class="muted">Les lignes « pas dans la liste » ne sont pas simulées. Demande à Claude de les ajouter à la page.</p>` : ""}
+      ${pendingDocDate && pendingDocDate !== localDate(new Date()) ? `<p class="loss">Ce document date du ${frDate(pendingDocDate)}, pas d'aujourd'hui : le relevé sera quand même enregistré à la date du jour.</p>` : ""}
       <div class="checkin-actions"><button type="button" class="btn" id="use-import">Utiliser ces montants</button><button type="button" class="btn secondary" id="cancel-import">Annuler</button></div>`;
     setMsg("");
   }
@@ -1175,18 +1182,137 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     for (const l of pendingImport) if (l.id) merged.set(l.id, Math.round(((merged.get(l.id) || 0) + l.valeur) * 100) / 100);
     if (!merged.size) { setMsg("Aucune de ces lignes n'est dans la liste de la page.", "err"); return; }
     const kept = state.positions.filter((p) => !merged.has(p.t) && p.a > 0);
+    const where = importSource === "pdf" ? "du PDF" : "des captures";
     state.positions = Array.from(merged, ([t, a]) => ({ t, a })).concat(kept.map((p) => ({ ...p })));
     pendingImport = null;
+    importSource = importSource === "pdf" ? "pdf" : "captures";
     $("import-out").innerHTML = "";
     renderBuilder();
     run(true, "portfolio");
     setMsg(kept.length
-      ? `Montants mis à jour. Absentes des captures, gardées avec leur montant précédent : ${kept.map((p) => nameOf(p.t)).join(", ")}. Retire-les avec × si tu les as vendues, puis enregistre.`
+      ? `Montants mis à jour. Absentes ${where}, gardées avec leur montant précédent : ${kept.map((p) => nameOf(p.t)).join(", ")}. Retire-les avec × si tu les as vendues, puis enregistre.`
       : "Montants mis à jour. S'ils sont justes, enregistre le relevé du jour.", "ok");
+  }
+  // pdf.js, loaded only when a PDF is picked. The worker script is loaded as a plain script so
+  // pdf.js runs it in the page itself (no separate worker to start).
+  const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/";
+  let pdfjsReady = null;
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src; s.async = false;
+      s.onload = () => resolve(); s.onerror = () => reject(new Error("load " + src));
+      document.head.appendChild(s);
+    });
+  }
+  function loadPdfJs() {
+    if (!pdfjsReady) {
+      pdfjsReady = loadScript(PDFJS + "pdf.worker.min.js")
+        .then(() => loadScript(PDFJS + "pdf.min.js"))
+        .then(() => {
+          if (!window.pdfjsLib) throw new Error("pdf.js missing");
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.js";
+          return window.pdfjsLib;
+        })
+        .catch((e) => { pdfjsReady = null; throw e; });
+    }
+    return pdfjsReady;
+  }
+  // Text of each page, rebuilt line by line so tables stay readable.
+  async function readPdf(file) {
+    const lib = await loadPdfJs();
+    const pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
+    const parts = [];
+    for (let n = 1; n <= Math.min(pdf.numPages, 20); n++) {
+      const page = await pdf.getPage(n);
+      const content = await page.getTextContent();
+      const rows = new Map();
+      for (const it of content.items) {
+        if (!it.str || !it.str.trim()) continue;
+        const y = Math.round(it.transform[5] / 3) * 3;
+        if (!rows.has(y)) rows.set(y, []);
+        rows.get(y).push({ x: it.transform[4], s: it.str });
+      }
+      const lines = Array.from(rows.entries()).sort((a, b) => b[0] - a[0])
+        .map(([, items]) => items.sort((a, b) => a.x - b.x).map((i) => i.s.trim()).join("  "));
+      parts.push(`--- page ${n} ---\n` + lines.join("\n"));
+    }
+    return { pdf, text: parts.join("\n") };
+  }
+  // A PDF without a text layer (a scan): its pages become images for Claude to read.
+  async function pdfToImages(pdf, max) {
+    const blobs = [];
+    for (let n = 1; n <= Math.min(pdf.numPages, max); n++) {
+      const page = await pdf.getPage(n);
+      const vp = page.getViewport({ scale: 1.6 });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+      blobs.push(await new Promise((r) => canvas.toBlob(r, "image/png")));
+    }
+    return blobs.filter(Boolean);
+  }
+  function buildPdfPrompt(text) {
+    const known = D.tickers.map((t, i) => `${t} = ${D.names[i]}`).join("\n");
+    return [
+      "Voici le texte d'un relevé PDF de Trade Republic (patrimoine, « net worth », ou relevé de titres) qui couvre un PEA et/ou un compte-titres.",
+      "Pour chaque placement (action, ETF, or…), relève son nom et sa valeur actuelle en euros : la valeur de marché de la position (quantité × cours), pas le cours unitaire, pas la quantité, pas la plus- ou moins-value.",
+      "Ignore les liquidités, les espèces, les intérêts, les sous-totaux et les totaux. Si un placement apparaît deux fois, ne le compte qu'une fois.",
+      "Si le document indique la date du relevé, donne-la au format AAAA-MM-JJ, sinon null.",
+      "Associe chaque placement à un identifiant de cette liste quand il correspond clairement, sinon mets null :",
+      known,
+      "Correspondances utiles : « Pea Monde MSCI World » = CW8.PA ; « PEA NASDAQ 100 » = PUST.PA ; « PEA MSCI Emerging Markets ESG » = PAEEM.PA ; « Nebius Group » = NBIS ; « TSMC (ADR) » ou « Taiwan Semiconductor » = TSM ; « Physical Gold » = GLD ; « Sivers Semiconductors » = SIVE.ST.",
+      'Réponds uniquement avec ce JSON : {"date":"2026-11-27","lignes":[{"nom":"Pea Monde MSCI World EUR (Acc)","id":"CW8.PA","valeur":1250.00}]}',
+      "",
+      "Texte du relevé :",
+      text.slice(0, 60000),
+    ].join("\n");
+  }
+  async function runPdfImport(pdfFile) {
+    importSource = "pdf";
+    let read;
+    try {
+      setMsg("Lecture du PDF…");
+      read = await readPdf(pdfFile);
+    } catch (e) {
+      const name = e && e.name;
+      setMsg(name === "PasswordException"
+        ? "Ce PDF est protégé par un mot de passe. Exporte-le sans mot de passe, ou importe des captures."
+        : name === "InvalidPDFException"
+          ? "Ce fichier n'est pas un PDF lisible."
+          : "Impossible d'ouvrir le lecteur de PDF pour le moment. Réessaie, ou importe des captures.", "err");
+      return;
+    }
+    try {
+      if (read.text.replace(/\s/g, "").length >= 40) {
+        setMsg("Claude lit ton relevé… (souvent 10 à 60 secondes)");
+        showImport(parseImport(await sampleFn.json(buildPdfPrompt(read.text), { cache: false })));
+      } else if (imageLimits) {
+        setMsg("Ce PDF est une image : Claude lit ses pages… (souvent 10 à 60 secondes)");
+        const images = await pdfToImages(read.pdf, imageLimits.maxCount);
+        showImport(parseImport(await sampleFn.json(buildImportPrompt(), { images, cache: false })));
+      } else {
+        setMsg("Ce PDF ne contient pas de texte lisible. Importe des captures, ou saisis les montants à la main.", "err");
+      }
+    } catch (e) {
+      const text = importErrorText(e && e.code);
+      setMsg(text, text ? "err" : "");
+    }
   }
   async function runImport(files) {
     if (!sampleFn || !files.length) return;
-    if (imageLimits && files.length > imageLimits.maxCount) {
+    const pdfFile = files.find((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+    if (pdfFile) {
+      $("import-out").innerHTML = "";
+      await runPdfImport(pdfFile);
+      return;
+    }
+    if (!imageLimits) {
+      setMsg("Ici, la page ne peut lire que le PDF. Importe le PDF du jour, ou saisis les montants à la main.", "err");
+      return;
+    }
+    importSource = "captures";
+    if (files.length > imageLimits.maxCount) {
       setMsg(`Pas plus de ${imageLimits.maxCount} captures à la fois.`, "err");
       return;
     }
@@ -1211,7 +1337,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     const now = new Date();
     const date = localDate(now), time = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
     const positions = sel.map((p) => ({ t: p.t, a: Math.round(p.a * 100) / 100 }));
-    const body = { date, time, positions, total: Math.round(sumPositions(positions) * 100) / 100, flows: $("flows").checked };
+    const body = { date, time, positions, total: Math.round(sumPositions(positions) * 100) / 100, flows: $("flows").checked, source: importSource };
     const btn = $("save-snapshot");
     btn.disabled = true;
     setMsg("Enregistrement…");
