@@ -210,6 +210,24 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
 .history-table .flag { color: var(--loss); font-family: var(--font-body); font-weight: 600; }
 .history-table .note { color: var(--muted); font-family: var(--font-body); }
 
+/* Risk / gain map */
+.frontier-controls { display: flex; flex-wrap: wrap; gap: 0.8rem 1.5rem; align-items: end; }
+.picks { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.pick { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 0.3rem 0.8rem; font-size: 0.88rem; cursor: pointer; }
+.pick[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.pick:disabled { opacity: 0.45; cursor: default; }
+.frontier-summary { font-size: 1.05rem; max-width: 40rem; }
+.frontier-summary b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.mix { display: grid; gap: 0.55rem; padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.mix-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.3rem 1rem; align-items: baseline; }
+.mix-head .num { font-size: 0.9rem; }
+.mix-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.mix-list li { display: grid; grid-template-columns: minmax(0, 10rem) minmax(0, 1fr) 3rem 5.5rem; gap: 0.5rem; align-items: center; font-size: 0.88rem; }
+.mix-list .num { text-align: right; }
+.mix-track { height: 0.55rem; background: var(--bg); border-radius: 3px; overflow: hidden; }
+.mix-fill { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.frontier-note { font-size: 0.85rem; color: var(--muted); max-width: 40rem; }
+
 @media (max-width: 560px) {
   .facts { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
   .fact { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0.75rem; }
@@ -222,6 +240,8 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
   .chip { white-space: nowrap; flex: none; }
   .seg button { padding: 0.42rem 0.65rem; }
   .contrib li { grid-template-columns: minmax(0, 1fr); }
+  .mix-list li { grid-template-columns: minmax(0, 1fr) 3rem 5rem; }
+  .mix-list .mix-track { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -288,6 +308,43 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
       </div>
       <button type="button" class="rerun" id="rerun">Relancer les 10&nbsp;000 avenirs</button>
     </div>
+  </section>
+
+  <section class="step" id="frontier-section" aria-labelledby="frontier-title">
+    <div class="step-head">
+      <span class="step-num">RISQUE ET GAIN</span>
+      <h2 id="frontier-title">Le moins de risque pour le plus de gain</h2>
+      <p class="explain">Chaque point gris est une autre façon de répartir ton argent. Plus à droite, un mauvais mois coûte plus cher. Plus haut, le gain moyen attendu par an est plus élevé. La courbe relie les meilleurs mélanges : pour chaque niveau de risque, celui qui rapporte le plus. Le point noir, c'est toi.</p>
+    </div>
+    <div class="frontier-controls">
+      <div class="setting">
+        <span class="setting-label" id="fmode-label">Gain attendu</span>
+        <div class="seg" role="group" aria-labelledby="fmode-label" id="fmode-seg">
+          <button type="button" id="fmode-0" data-fmode="0" aria-pressed="true">Prudent</button>
+          <button type="button" id="fmode-1" data-fmode="1" aria-pressed="false">Comme ces 2 ans</button>
+        </div>
+      </div>
+      <div class="setting">
+        <span class="setting-label" id="funi-label">Avec</span>
+        <div class="seg" role="group" aria-labelledby="funi-label" id="funi-seg">
+          <button type="button" id="funi-0" data-funi="0" aria-pressed="true">Tes lignes</button>
+          <button type="button" id="funi-1" data-funi="1" aria-pressed="false">Toutes les lignes</button>
+        </div>
+      </div>
+    </div>
+    <p class="frontier-summary" id="frontier-summary"></p>
+    <div class="picks" id="picks">
+      <button type="button" class="pick" id="pick-best" data-pick="best">Meilleur rapport gain / risque</button>
+      <button type="button" class="pick" id="pick-min-risk" data-pick="min-risk">Risque minimum</button>
+      <button type="button" class="pick" id="pick-same-gain" data-pick="same-gain">Même gain, moins de risque</button>
+      <button type="button" class="pick" id="pick-same-risk" data-pick="same-risk">Même risque, plus de gain</button>
+    </div>
+    <div class="chart">
+      <canvas id="frontier-chart" role="img" aria-label="Carte du risque et du gain"></canvas>
+      <p class="readout" id="frontier-readout">Touche la courbe pour voir le mélange à cet endroit.</p>
+    </div>
+    <div class="mix" id="mix"></div>
+    <p class="frontier-note" id="frontier-note"></p>
   </section>
 
   <section class="step" id="history-section" aria-labelledby="history-title" hidden>
@@ -417,7 +474,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
   let state = loadState();
 
   function loadState() {
-    const base = { positions: firstPreset(), days: 21, tail: 20, seed: 42, trend: 0 };
+    const base = { positions: firstPreset(), days: 21, tail: 20, seed: 42, trend: 0, fMode: 0, fUniverse: 0, fPick: "best" };
     try {
       const raw = localStorage.getItem(STORE);
       if (!raw) return base;
@@ -429,6 +486,9 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
         tail: [10, 20, 100].includes(s.tail) ? s.tail : 20,
         seed: Number.isInteger(s.seed) ? s.seed : 42,
         trend: s.trend === 1 ? 1 : 0,
+        fMode: s.fMode === 1 ? 1 : 0,
+        fUniverse: s.fUniverse === 1 ? 1 : 0,
+        fPick: ["best", "min-risk", "same-gain", "same-risk"].includes(s.fPick) ? s.fPick : "best",
       };
     } catch (e) {
       return base;
@@ -1436,12 +1496,281 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     else if (e.target.closest("#cancel-import")) { pendingImport = null; $("import-out").innerHTML = ""; setMsg(""); }
   });
 
+  // ---------- risk / gain map ----------
+  // Long-only mean-variance frontier, at most 50 % in one line. Risk on the x axis is the bad-period
+  // loss from the past swings and links only (no trend), scaled so that your own point matches the
+  // simulation above. Gain on the y axis is an assumption. "Prudent" is the CAPM: only market risk is
+  // paid, 2 % + 5 % x beta to the MSCI World a year, so a line's own risk earns nothing extra.
+  // "Comme ces 2 ans" replays each line's average growth.
+  const RF = 0.02, ERP = 0.05, CAP = 0.5, MARKET = "CW8.PA";
+  let frontier = null, frontierSel = null;
+  const PICK_LABEL = { "best": "Meilleur rapport gain / risque", "min-risk": "Risque minimum", "same-gain": "Même gain, moins de risque", "same-risk": "Même risque, plus de gain", custom: "Point choisi sur la courbe", you: "Ton portefeuille" };
+
+  function projectCapped(v, cap) {
+    let lo = Math.min(...v) - 1, hi = Math.max(...v);
+    for (let it = 0; it < 70; it++) {
+      const mid = (lo + hi) / 2;
+      let s = 0;
+      for (const x of v) s += Math.min(cap, Math.max(0, x - mid));
+      if (s > 1) lo = mid; else hi = mid;
+    }
+    const tau = (lo + hi) / 2;
+    return v.map((x) => Math.min(cap, Math.max(0, x - tau)));
+  }
+
+  function computeFrontier() {
+    const live = state.positions.filter((p) => p.a > 0);
+    const capital = live.reduce((s, p) => s + p.a, 0);
+    const tickers = state.fUniverse === 1 ? D.tickers.slice() : live.map((p) => p.t);
+    const n = tickers.length;
+    if (n < 2 || capital <= 0) return null;
+    const idx = tickers.map(idxOf);
+    const S = idx.map((i) => idx.map((j) => D.cov[i][j] * 252));
+    const m = idxOf(MARKET);
+    const r = idx.map((i) => (state.fMode === 1 ? Math.expm1(D.mu[i] * 252) : RF + ERP * (D.cov[i][m] / D.cov[m][m])));
+    const cap = n >= 3 ? CAP : 1;
+    const zh = (Z[state.tail] || Z[20]) * Math.sqrt(state.days / 252);
+    const sigma = (w) => {
+      let v = 0;
+      for (let a = 0; a < n; a++) { if (!w[a]) continue; for (let b = 0; b < n; b++) v += w[a] * w[b] * S[a][b]; }
+      return Math.sqrt(Math.max(v, 0));
+    };
+    const youW = tickers.map((t) => { const p = live.find((q) => q.t === t); return p ? p.a / capital : 0; });
+    // Loss of a bad period for a log-normal portfolio, scaled on the Monte Carlo answer when they compare.
+    let scale = 1;
+    const sameRun = current && current.together && state.trend === 0 && current.sim && current.sim.days === state.days;
+    if (sameRun) {
+      const raw = capital * -Math.expm1(-zh * sigma(youW));
+      if (raw > 0) scale = Math.min(1.3, Math.max(0.7, current.together.var / raw));
+    }
+    const risk = (w) => scale * capital * -Math.expm1(-zh * sigma(w));
+    const gain = (w) => w.reduce((s, x, a) => s + x * r[a], 0) * capital;
+    const point = (w) => ({ w, x: risk(w), y: gain(w) });
+
+    let v = new Array(n).fill(1 / Math.sqrt(n)), L = 1e-9;
+    for (let k = 0; k < 50; k++) {
+      const u = S.map((row) => row.reduce((s, x, j) => s + x * v[j], 0));
+      L = Math.hypot(...u) || 1e-9;
+      v = u.map((x) => x / L);
+    }
+    const pts = [];
+    let w = projectCapped(new Array(n).fill(1 / n), cap);
+    for (let k = 0; k < 70; k++) {
+      const lam = Math.pow(10, 3 - (5 * k) / 69);
+      const eta = 1 / (lam * L);
+      for (let it = 0; it < 300; it++) {
+        const step = w.map((x, a) => {
+          let s = 0;
+          for (let b = 0; b < n; b++) s += S[a][b] * w[b];
+          return x + eta * (r[a] - lam * s);
+        });
+        const next = projectCapped(step, cap);
+        let diff = 0;
+        for (let a = 0; a < n; a++) diff += Math.abs(next[a] - w[a]);
+        w = next;
+        if (diff < 1e-7) break;
+      }
+      pts.push(point(w.slice()));
+    }
+    pts.sort((a, b) => a.x - b.x);
+    const front = [];
+    for (const p of pts) if (!front.length || p.y > front[front.length - 1].y + 0.01) front.push(p);
+
+    const rnd = mulberry32(7);
+    const cloud = [];
+    for (let k = 0; k < 1200; k++) {
+      const e = Array.from({ length: n }, () => -Math.log(1 - rnd()));
+      const s = e.reduce((x, y) => x + y, 0);
+      cloud.push(point(projectCapped(e.map((x) => x / s), cap)));
+    }
+    const singles = tickers.map((t, a) => ({ t, ...point(tickers.map((_, b) => (a === b ? 1 : 0))) }));
+    const you = point(youW);
+    const interp = (a, b, t) => point(a.w.map((x, k) => x + Math.min(1, Math.max(0, t)) * (b.w[k] - x)));
+    const minRisk = front[0], top = front[front.length - 1];
+    let sameGain = null, sameRisk = null;
+    if (you.y <= minRisk.y) sameGain = minRisk;
+    else for (let k = 1; k < front.length; k++) if (front[k].y >= you.y) { const a = front[k - 1], b = front[k]; sameGain = interp(a, b, (you.y - a.y) / (b.y - a.y || 1)); break; }
+    if (you.x >= top.x) sameRisk = top;
+    else if (you.x <= minRisk.x) sameRisk = minRisk;
+    else for (let k = 1; k < front.length; k++) if (front[k].x >= you.x) { const a = front[k - 1], b = front[k]; sameRisk = interp(a, b, (you.x - a.x) / (b.x - a.x || 1)); break; }
+    let best = front[0];
+    for (const p of front) if (p.x > 0 && (p.y - RF * capital) / p.x > (best.y - RF * capital) / best.x) best = p;
+    return { tickers, front, cloud, singles, you, capital, cap, picks: { best, "min-risk": minRisk, "same-gain": sameGain, "same-risk": sameRisk } };
+  }
+
+  function renderFrontier() {
+    frontier = computeFrontier();
+    for (const b of document.querySelectorAll("#fmode-seg button")) b.setAttribute("aria-pressed", String(+b.dataset.fmode === state.fMode));
+    for (const b of document.querySelectorAll("#funi-seg button")) b.setAttribute("aria-pressed", String(+b.dataset.funi === state.fUniverse));
+    const h = HORIZONS[state.days];
+    $("frontier-note").textContent = (state.fMode === 1
+      ? "Hypothèse « Comme ces 2 ans » : chaque ligne referait sa hausse moyenne des 2 dernières années. Les lignes qui ont flambé écrasent alors tout : c'est pour ça que les pros n'utilisent jamais le passé tel quel. "
+      : "Hypothèse « Prudent », celle de base des pros (le CAPM) : seul le risque de marché est payé. Chaque ligne rapporterait en moyenne 2 % + 5 % × sa sensibilité au MSCI World (son bêta) par an ; le risque propre à une seule action ne rapporte rien de plus. ")
+      + `Le risque est la perte d'${h.bad} (1 fois sur ${state.tail}), calculée sur les variations passées. Règle de prudence : pas plus de 50 % sur une seule ligne (les cercles vides montrent « tout sur une ligne »). Ce n'est pas un conseil d'investissement.`;
+    if (!frontier) {
+      $("frontier-summary").textContent = "Ajoute au moins 2 lignes (ou choisis « Toutes les lignes ») pour voir la courbe.";
+      $("mix").hidden = true;
+      $("picks").hidden = true;
+      prep($("frontier-chart"), 80);
+      $("frontier-readout").textContent = "";
+      return;
+    }
+    $("mix").hidden = false;
+    $("picks").hidden = false;
+    const { you, picks } = frontier;
+    const lines = [];
+    const sg = picks["same-gain"], sr = picks["same-risk"];
+    if (sg && sg.x < you.x - 1) lines.push(`Avec le même gain moyen (<b class="gain">${moneySigned(you.y)}</b> par an), ${h.bad} pourrait coûter <b class="loss">${money(sg.x)}</b> au lieu de <b>${money(you.x)}</b>.`);
+    if (sr && sr.y > you.y + 1) lines.push(`Ou, pour le même risque (${money(you.x)}), le gain moyen pourrait monter à <b class="gain">${moneySigned(sr.y)}</b> par an au lieu de ${moneySigned(you.y)}.`);
+    if (!lines.length) lines.push(`Ton portefeuille est déjà sur la courbe : pour gagner plus en moyenne, il faut accepter plus de risque.`);
+    $("frontier-summary").innerHTML = lines.join(" ");
+    for (const [key, p] of Object.entries(picks)) {
+      const btn = $("pick-" + key);
+      btn.disabled = !p;
+      btn.setAttribute("aria-pressed", String(state.fPick === key));
+    }
+    const chosen = picks[state.fPick] || picks.best;
+    frontierSel = { kind: picks[state.fPick] ? state.fPick : "best", ...chosen };
+    drawFrontier();
+    renderMix();
+  }
+
+  function renderMix() {
+    const box = $("mix");
+    if (!frontier || !frontierSel) { box.innerHTML = ""; return; }
+    const cap = frontier.capital;
+    const rows = frontier.tickers.map((t, k) => ({ t, w: frontierSel.w[k] })).filter((r) => r.w >= 0.005).sort((a, b) => b.w - a.w);
+    const pctG = frontierSel.y / cap;
+    box.innerHTML = `<div class="mix-head"><h3>${esc(PICK_LABEL[frontierSel.kind] || PICK_LABEL.custom)}</h3>
+        <span class="num">mauvais ${HORIZONS[state.days].unit} ${money(-frontierSel.x)} · gain moyen ${moneySigned(frontierSel.y)}/an (${pctSigned(pctG)})</span></div>
+      <ul class="mix-list">${rows.map((r) => `<li><span>${esc(nameOf(r.t))}</span><span class="mix-track"><span class="mix-fill" style="width:${(r.w * 100).toFixed(1)}%"></span></span><span class="num">${pf(0).format(r.w)}</span><span class="num">${nf0.format(Math.round(r.w * cap))} €</span></li>`).join("")}</ul>
+      <div class="checkin-actions"><button type="button" class="btn" id="try-mix">Essayer ce mélange dans la simulation</button></div>
+      <p class="frontier-note">Pour revenir à ton vrai portefeuille ensuite : bouton « Mon dernier relevé » (ou ressaisis tes montants).</p>`;
+  }
+
+  function drawFrontier() {
+    if (!frontier) return;
+    const canvas = $("frontier-chart");
+    const { ctx, w, h } = prep(canvas, canvas.clientWidth < 500 ? 300 : 360);
+    const ink = css("--ink"), muted = css("--muted"), gain = css("--gain"), accent = css("--accent"), line = css("--line");
+    const mono = "12px " + css("--font-mono");
+    const { front, cloud, singles, you, picks } = frontier;
+    const sel = frontierSel;
+    let xmax = Math.max(you.x * 1.7, front[0].x * 2.6, sel ? sel.x * 1.15 : 0);
+    const inX = (p) => p.x <= xmax;
+    const ys = cloud.filter(inX).map((p) => p.y).concat(front.filter(inX).map((p) => p.y), [you.y]);
+    let ymin = Math.min(...ys), ymax = Math.max(...ys);
+    const padY = (ymax - ymin || 1) * 0.12; ymin -= padY; ymax += padY;
+    const L = 58, R = w - 10, top = 30, bottom = h - 40;
+    const surface = css("--surface");
+    const X = (v) => L + (v / xmax) * (R - L);
+    const Y = (v) => bottom - ((v - ymin) / (ymax - ymin)) * (bottom - top);
+    // grid and axes
+    ctx.font = mono; ctx.fillStyle = muted; ctx.strokeStyle = line; ctx.lineWidth = 1;
+    for (const t of niceTicks(ymin, ymax, 4)) {
+      ctx.beginPath(); ctx.moveTo(L, Y(t) + 0.5); ctx.lineTo(R, Y(t) + 0.5); ctx.stroke();
+      ctx.textAlign = "right"; ctx.fillText(tickLabel(t), L - 6, Y(t) + 4);
+    }
+    for (const t of niceTicks(0, xmax, w < 500 ? 3 : 5)) {
+      if (t <= 0) continue;
+      ctx.textAlign = "center"; ctx.fillText(money(-t), X(t), bottom + 16);
+    }
+    ctx.textAlign = "left"; ctx.fillStyle = ink;
+    ctx.fillText(`perte d'${HORIZONS[state.days].bad} →`, L, h - 6);
+    ctx.fillText("↑ gain moyen par an", 4, 14);
+    ctx.save(); ctx.beginPath(); ctx.rect(L, top - 6, R - L + 6, bottom - top + 12); ctx.clip();
+    // every other mix
+    ctx.fillStyle = muted; ctx.globalAlpha = 0.28;
+    for (const p of cloud) if (inX(p)) { ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), 2, 0, Math.PI * 2); ctx.fill(); }
+    ctx.globalAlpha = 1;
+    // all in one line
+    ctx.strokeStyle = muted; ctx.lineWidth = 1.2;
+    for (const s of singles) if (inX(s)) {
+      ctx.beginPath(); ctx.arc(X(s.x), Y(s.y), 4, 0, Math.PI * 2); ctx.stroke();
+      if (singles.length <= 8) {
+        const t = s.t.replace(/\..*$/, "");
+        ctx.strokeStyle = surface; ctx.lineWidth = 3; ctx.strokeText(t, X(s.x) + 6, Y(s.y) + 4);
+        ctx.fillStyle = muted; ctx.fillText(t, X(s.x) + 6, Y(s.y) + 4);
+        ctx.strokeStyle = muted; ctx.lineWidth = 1.2;
+      }
+    }
+    // the frontier
+    ctx.strokeStyle = accent; ctx.lineWidth = 3;
+    ctx.beginPath(); front.forEach((p, k) => ctx[k ? "lineTo" : "moveTo"](X(p.x), Y(p.y))); ctx.stroke();
+    // marked points
+    const dot = (p, color, r, label, fill = true, below = false) => {
+      if (!p || !inX(p)) return;
+      ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), r, 0, Math.PI * 2);
+      if (fill) { ctx.fillStyle = color; ctx.fill(); } else { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke(); }
+      if (label) {
+        ctx.fillStyle = color; ctx.font = "600 " + mono;
+        const tw = ctx.measureText(label).width;
+        const right = X(p.x) + 9 + tw > R;
+        ctx.textAlign = right ? "right" : "left";
+        const lx = right ? X(p.x) - 9 : X(p.x) + 9, ly = below ? Y(p.y) + 17 : Y(p.y) - 7;
+        ctx.strokeStyle = surface; ctx.lineWidth = 4; ctx.lineJoin = "round"; ctx.strokeText(label, lx, ly);
+        ctx.fillText(label, lx, ly);
+        ctx.textAlign = "left"; ctx.font = mono;
+      }
+    };
+    dot(picks["min-risk"], gain, 5, "risque minimum", true, true);
+    dot(picks.best, accent, 5, "meilleur rapport", true, true);
+    if (sel) dot(sel, accent, 9, "", false);
+    dot(you, ink, 6, "toi");
+    ctx.restore();
+    canvas.setAttribute("aria-label", `Carte du risque et du gain. Toi : mauvaise période ${money(-you.x)}, gain moyen ${moneySigned(you.y)} par an.`);
+  }
+
+  function frontierAt(clientX) {
+    if (!frontier) return;
+    const canvas = $("frontier-chart");
+    const rect = canvas.getBoundingClientRect();
+    const L = 58, R = rect.width - 10;
+    const xmax = Math.max(frontier.you.x * 1.7, frontier.front[0].x * 2.6, frontierSel ? frontierSel.x * 1.15 : 0);
+    const v = ((clientX - rect.left - L) / (R - L)) * xmax;
+    let best = frontier.front[0];
+    for (const p of frontier.front) if (Math.abs(p.x - v) < Math.abs(best.x - v)) best = p;
+    frontierSel = { kind: "custom", ...best };
+    for (const b of document.querySelectorAll("#picks .pick")) b.setAttribute("aria-pressed", "false");
+    $("frontier-readout").textContent = `À cet endroit : mauvaise période ${money(-best.x)}, gain moyen ${moneySigned(best.y)} par an.`;
+    drawFrontier();
+    renderMix();
+  }
+
+  $("fmode-seg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-fmode]");
+    if (!b) return;
+    state.fMode = +b.dataset.fmode; saveState(); renderFrontier();
+  });
+  $("funi-seg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-funi]");
+    if (!b) return;
+    state.fUniverse = +b.dataset.funi; saveState(); renderFrontier();
+  });
+  $("picks").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-pick]");
+    if (!b || b.disabled) return;
+    state.fPick = b.dataset.pick; saveState(); renderFrontier();
+    $("frontier-readout").textContent = "Touche la courbe pour voir le mélange à cet endroit.";
+  });
+  $("mix").addEventListener("click", (e) => {
+    if (!e.target.closest("#try-mix") || !frontier || !frontierSel) return;
+    const capital = frontier.capital;
+    state.positions = frontier.tickers.map((t, k) => ({ t, a: Math.round(frontierSel.w[k] * capital * 100) / 100 })).filter((p) => p.a >= 0.5);
+    renderBuilder();
+    run(true, "portfolio");
+    $("answer").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  });
+  const fchart = $("frontier-chart");
+  fchart.addEventListener("pointerdown", (e) => frontierAt(e.clientX));
+  fchart.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "mouse") frontierAt(e.clientX); });
+
   // ---------- run ----------
   function run(resimulate = true, reason = "") {
     const sel = state.positions.filter((p) => p.a > 0);
     if (!sel.length) {
       current = null;
-      renderAnswer(); renderPast(); renderStep3(); renderContrib(); drawCorr();
+      renderAnswer(); renderPast(); renderStep3(); renderContrib(); drawCorr(); renderFrontier();
       prep($("fan"), 120); $("counters").innerHTML = "";
       prep($("hist"), 80); setReadout(-1);
       saveState();
@@ -1458,7 +1787,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
     const key = state.days + "-" + state.tail;
     current.delta = reason === "portfolio" && previous && previous.key === key ? { before: previous.var, after: current.together.var } : null;
     previous = { key, var: current.together.var };
-    renderAnswer(); renderPast(); renderStep3(); drawHist(); setReadout(-1); renderContrib(); drawCorr(); renderHistory();
+    renderAnswer(); renderPast(); renderStep3(); drawHist(); setReadout(-1); renderContrib(); drawCorr(); renderHistory(); renderFrontier();
     if (resimulate) animateFan(); else drawFan(1);
     saveState();
   }
@@ -1544,7 +1873,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--li
   function redrawAll() {
     if (!current) return;
     cancelAnimationFrame(anim);
-    drawFan(1); drawHist(); drawDensity(); drawHistoryChart();
+    drawFan(1); drawHist(); drawDensity(); drawHistoryChart(); drawFrontier();
   }
   let rz = 0, lastW = 0;
   new ResizeObserver((entries) => {
